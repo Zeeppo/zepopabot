@@ -68,7 +68,13 @@ You are a helpful and conversational AI assistant participating in a Telegram gr
 Analyze the provided message history to understand the ongoing context, the topic of discussion, and the general tone (e.g., friendly, serious, humorous).
 Respond to the last message naturally, appropriately, and in a way that fits the conversation's flow and tone. Keep your responses concise unless asked for detail.
 Do not explicitly mention that you are analyzing tone or context unless relevant to the query. Avoid starting responses with 'Okay', 'Sure', or similar acknowledgements unless directly answering a question.
-If asked about your capabilities, mention you can understand conversation history.
+If asked about your capabilities, mention you can understand conversation history. Старайся отвечать на русском. Разговаривай как норм чел, шути иногда. Ты еще самый главный фанат российского блогера, инфобизнесмена и коуча, известного своими противоречивыми взглядами и высказыванями Арсена Маркаряна(Даже главнее Паши).
+
+***IMPORTANT FORMATTING INSTRUCTIONS:***
+- Use Telegram's MarkdownV2 formatting for all responses where applicable.
+- **For code blocks:** Use triple backticks. Specify the language if known (e.g., ```python\n# your code here\n```). For plain code or unknown languages, just use ```\ncode here\n```.
+- **For inline code:** Use single backticks, like `my_variable`.
+- **Escape:** Remember to escape MarkdownV2 special characters (`_`, `*`, `[`, `]`, `(`, `)`, `~`, `` ` ``, `>`, `#`, `+`, `-`, `=`, `|`, `{`, `}`, `.`, `!`) with a preceding backslash (`\\`) if they appear in *regular text* (outside code blocks/spans). For example, write `1\\. Example` instead of `1. Example`. This is crucial for the message to render correctly.
 """
 
 # --- In-Memory Message Storage ---
@@ -101,7 +107,7 @@ async def get_llm_response(chat_id: int) -> str | None:
             model=OPENROUTER_MODEL_NAME, # Use the configured OpenRouter model
             messages=messages,
             temperature=0.75,
-            max_tokens=150,
+            max_tokens=1000,
             top_p=1.0,
             frequency_penalty=0.1,
             presence_penalty=0.1
@@ -130,12 +136,7 @@ async def get_llm_response(chat_id: int) -> str | None:
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Sends explanation on /start."""
-    await update.message.reply_text(f"Hi! I am a contextual chat bot using OpenRouter. Add me to a group and "
-                                     f"disable privacy mode (via BotFather /setprivacy). "
-                                     f"I will respond if you mention me ({BOT_USERNAME}). "
-                                     f"Additionally, I might randomly respond to other messages "
-                                     f"(currently with a {RESPONSE_PROBABILITY*100:.0f}% chance per message) "
-                                     f"based on the conversation context.")
+    await update.message.reply_text(f"хуй {RESPONSE_PROBABILITY*100:.0f}%")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles incoming messages, stores them, and responds if mentioned OR randomly."""
@@ -184,18 +185,49 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             chat_histories[chat_id].append(bot_response_data)
             logger.info(f"Stored bot response in chat {chat_id}: {bot_display_name}: {ai_response}")
             await message.reply_text(ai_response)
-        else:
-             # Response generation failed, error already logged.
-             # Send a fallback only if explicitly mentioned.
-             if bot_mentioned:
-                 fallback_message = "Sorry, I couldn't process that request right now."
-                 # Check if get_llm_response returned a specific error message
-                 # This part is tricky as get_llm_response returns strings now.
-                 # We might rely on the fact that error messages are specific.
-                 # Or refactor get_llm_response to return None on generic errors and string on specific ones.
-                 # For now, let's just send a generic one if ai_response is None/empty
-                 await message.reply_text(fallback_message)
-             pass # Silent failure on random trigger is usually better
+            try:
+                await message.reply_text(
+                    text=ai_response,
+                    parse_mode=ParseMode.MARKDOWN_V2
+                )
+                logger.info(f"Sent response with MarkdownV2 formatting to chat {chat_id}.")
+
+            except BadRequest as e:
+                # Check if the error is likely due to parsing
+                # Common error messages include "Can't parse entities" or specific character errors
+                if "parse" in str(e).lower() or "entity" in str(e).lower():
+                    logger.warning(
+                        f"Failed to send message with MarkdownV2 formatting to chat {chat_id} due to parsing error: {e}. Sending as plain text.")
+                    # Fallback: Send as plain text
+                    try:
+                        await message.reply_text(text=ai_response)
+                    except Exception as fallback_e:
+                        logger.error(f"Failed to send fallback plain text message to chat {chat_id}: {fallback_e}")
+                else:
+                    # Different type of BadRequest, re-raise or handle differently if needed
+                    logger.error(
+                        f"BadRequest error when sending message to chat {chat_id}, not necessarily parsing: {e}")
+                    # Optionally, send a generic error message?
+                    # await message.reply_text("Sorry, I couldn't send my response correctly.")
+
+            except Exception as e:
+                # Catch other potential sending errors
+                logger.error(f"Unexpected error when sending message to chat {chat_id}: {e}")
+                # Optionally, send a generic error message?
+                # await message.reply_text("Sorry, an error occurred while sending my response.")
+
+            else:
+                # LLM failed, error already logged by get_llm_response.
+                # Send a fallback only if explicitly mentioned.
+                if bot_mentioned:
+                    fallback_message = "Sorry, I couldn't process that request right now."
+                    # Consider using the error message returned by get_llm_response if it's user-friendly
+                    # ai_error_response = await get_llm_response(chat_id) # This would call it again, bad idea
+                    # Maybe get_llm_response should return a tuple (success: bool, content: str)
+                    await message.reply_text(fallback_message)
+                pass  # Silent failure on random trigger is usually better
+            else:
+                logger.debug(f"No mention and random chance ({RESPONSE_PROBABILITY * 100:.0f}%) not met in chat {chat_id}.")
     else:
          logger.debug(f"No mention and random chance ({RESPONSE_PROBABILITY*100:.0f}%) not met in chat {chat_id}.")
 
