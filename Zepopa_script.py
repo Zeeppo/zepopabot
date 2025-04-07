@@ -9,6 +9,7 @@ import openai # We still use this library!
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.constants import ParseMode
+from telegram.error import BadRequest
 from telegram.ext import (Application, CommandHandler, ContextTypes,
                           MessageHandler, filters)
 
